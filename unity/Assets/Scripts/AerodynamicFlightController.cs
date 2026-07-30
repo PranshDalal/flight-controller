@@ -84,10 +84,12 @@ public class AerodynamicFlightController : MonoBehaviour
     [SerializeField] private float maxAngularVelocityDegPerSec = 120f;
 
     private Rigidbody _rigidbody;
+    private EngineStartup _engineStartup;
 
     private void Awake()
     {
         _rigidbody = GetComponent<Rigidbody>();
+        _engineStartup = GetComponent<EngineStartup>();
         _rigidbody.useGravity = true;
         _rigidbody.linearDamping = 0f;   // drag is modeled explicitly below; Rigidbody drag would double-count it
         _rigidbody.angularDamping = 0.5f;
@@ -128,7 +130,8 @@ public class AerodynamicFlightController : MonoBehaviour
     private void ApplyThrust()
     {
         float throttle = flightInput != null ? flightInput.Throttle : 0f;
-        _rigidbody.AddRelativeForce(Vector3.forward * (maxThrust * throttle), ForceMode.Force);
+        float engineReadiness = _engineStartup != null ? _engineStartup.Readiness : 1f;
+        _rigidbody.AddRelativeForce(Vector3.forward * (maxThrust * throttle * engineReadiness), ForceMode.Force);
     }
 
     private void ApplyAerodynamics(Vector3 velocity, float speed, Vector3 localVelocity)

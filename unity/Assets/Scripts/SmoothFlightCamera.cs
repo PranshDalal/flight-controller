@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 // Third-person chase camera: follows behind/above the target and banks softly with it,
@@ -26,6 +27,10 @@ public class SmoothFlightCamera : MonoBehaviour
     [Tooltip("0 = camera never rolls with the aircraft (rock-steady). 1 = camera fully matches the aircraft's bank angle. Kept low so a hard roll doesn't fling the camera around; the orbit position itself never uses roll at all.")]
     [SerializeField, Range(0f, 1f)] private float rollInfluence = 0.25f;
 
+    private Vector3 _smoothedPosition;
+    private Vector3 _shakeOffset;
+    private Coroutine _shakeCoroutine;
+
     /// <summary>Allows a bootstrapper/spawner to wire the chase target without exposing the serialized field.</summary>
     public void SetTarget(Transform newTarget) => target = newTarget;
 
@@ -33,7 +38,28 @@ public class SmoothFlightCamera : MonoBehaviour
     public void SnapToTarget()
     {
         if (target == null) return;
-        transform.SetPositionAndRotation(DesiredPosition(), DesiredRotation());
+        _smoothedPosition = DesiredPosition();
+        transform.SetPositionAndRotation(_smoothedPosition, DesiredRotation());
+    }
+
+    /// <summary>Punches the camera with a brief, decaying random offset - e.g. on a crash impact.</summary>
+    public void Shake(float duration, float magnitude)
+    {
+        if (_shakeCoroutine != null) StopCoroutine(_shakeCoroutine);
+        _shakeCoroutine = StartCoroutine(ShakeRoutine(duration, magnitude));
+    }
+
+    private IEnumerator ShakeRoutine(float duration, float magnitude)
+    {
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            float falloff = 1f - elapsed / duration;
+            _shakeOffset = Random.insideUnitSphere * magnitude * falloff;
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+        _shakeOffset = Vector3.zero;
     }
 
     private void LateUpdate()
@@ -43,7 +69,8 @@ public class SmoothFlightCamera : MonoBehaviour
         float posT = 1f - Mathf.Exp(-positionDamping * Time.deltaTime);
         float rotT = 1f - Mathf.Exp(-rotationDamping * Time.deltaTime);
 
-        transform.position = Vector3.Lerp(transform.position, DesiredPosition(), posT);
+        _smoothedPosition = Vector3.Lerp(_smoothedPosition, DesiredPosition(), posT);
+        transform.position = _smoothedPosition + _shakeOffset;
         transform.rotation = Quaternion.Slerp(transform.rotation, DesiredRotation(), rotT);
     }
 

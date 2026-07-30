@@ -1,8 +1,9 @@
 using UnityEngine;
 
 // Procedurally builds a minimal open-world flight-sim scene at runtime: a low-poly landscape,
-// an active runway, a placeholder airplane wired up with AerodynamicFlightController, an input
-// manager running KeyboardFlightInput, a SmoothFlightCamera chasing the plane, and a speed HUD.
+// an active runway, a placeholder airplane wired up with AerodynamicFlightController and
+// CrashEffects, an input manager running KeyboardFlightInput, a SmoothFlightCamera chasing the
+// plane, and a speed HUD.
 //
 // Usage: drop this on a single empty GameObject in an empty scene and press Play. No manual
 // scene setup required. Swap the placeholder primitive airplane for a real model later by
@@ -36,6 +37,9 @@ public class WorldBootstrapper : MonoBehaviour
     [Header("Airplane")]
     [Tooltip("Optional: drag an imported model (or its prefab) here to replace the placeholder capsule/cube aircraft. Its nose must point down local +Z (the blue axis in the Scene view) - wrap it in an empty parent and rotate that if the model itself faces a different way. Leave empty to keep the placeholder.")]
     [SerializeField] private GameObject aircraftModelPrefab;
+
+    [Tooltip("Plays once the player asks for throttle (and again after respawning from a crash), then loops its last few seconds to keep the engine running. Thrust stays at zero until it finishes spooling up, so the plane can't start rolling before the engine sounds ready. Leave empty to skip the sound and allow thrust immediately.")]
+    [SerializeField] private AudioClip engineStartupClip;
 
     private readonly System.Random _rng = new System.Random(1337);
 
@@ -265,8 +269,16 @@ public class WorldBootstrapper : MonoBehaviour
         var rb = planeRoot.AddComponent<Rigidbody>();
         rb.mass = 1000f;
 
+        // added before AerodynamicFlightController so its GetComponent<EngineStartup>() in Awake() finds it
+        var engineStartup = planeRoot.AddComponent<EngineStartup>();
+        engineStartup.Configure(engineStartupClip, flightInput);
+
         var flightController = planeRoot.AddComponent<AerodynamicFlightController>();
         flightController.SetFlightInput(flightInput);
+
+        // added last so its Awake() (which grabs the renderers/controller above via
+        // GetComponent) runs after everything it needs to find already exists
+        planeRoot.AddComponent<CrashEffects>();
 
         return planeRoot.transform;
     }
