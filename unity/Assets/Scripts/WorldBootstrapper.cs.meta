@@ -1,0 +1,12 @@
+fileFormatVersion: 2
+guid: 2093c5d2058054634934c6441cf09f18
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - aircraftModelPrefab: {fileID: 919132149155446097, guid: ed01842ecafc44a96bd82182654209e9, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

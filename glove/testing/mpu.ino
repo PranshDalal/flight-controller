@@ -1,8 +1,6 @@
 #include <Wire.h>
 
-// Multiplexer address
 #define TCAADDR 0x70
-// MPU-6050 constants
 #define MPU_ADDR 0x68
 #define PWR_MGMT_1 0x6B
 #define ACCEL_XOUT_H 0x3B

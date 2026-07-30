@@ -1,0 +1,26 @@
+# Unity generated folders
+unity/Library/
+unity/Temp/
+unity/Obj/
+unity/Build/
+unity/Builds/
+unity/Logs/
+unity/UserSettings/
+unity/MemoryCaptures/
+unity/Recordings/
+
+# Unity generated IDE/project files
+unity/.vs/
+unity/*.csproj
+unity/*.sln
+unity/*.user
+unity/*.userprefs
+unity/*.pidb
+unity/*.booproj
+
+# Unity crash logs
+unity/sysinfo.txt
+unity/*.stackdump
+
+# OS cruft
+.DS_Store
