@@ -19,6 +19,7 @@ using UnityEngine;
 //
 // Opens the device as a raw Unix character file, same reasoning as GloveFlightInput (Unity's
 // bundled SerialPort is Windows-only).
+[RequireComponent(typeof(AudioSource))]
 public class GestureFlightInput : MonoBehaviour, IFlightInput
 {
     [Header("Serial Connection")]
@@ -27,7 +28,7 @@ public class GestureFlightInput : MonoBehaviour, IFlightInput
 
     [Header("Pose Gesture Targets")]
     [Tooltip("Pitch axis target while the pose classifier reports 'climb' (or a climb_bank_* combo), range [-1, 1]. Not full deflection by default - a discrete classifier snapping straight to max input reads as twitchier than continuous stick control.")]
-    [SerializeField, Range(0f, 1f)] private float climbPitchTarget = 0.8f;
+    [SerializeField, Range(0f, 1f)] private float climbPitchTarget = 1.0f;
 
     [Tooltip("Pitch axis target (negative = nose down) while the pose classifier reports 'dive' (or a dive_bank_* combo).")]
     [SerializeField, Range(0f, 1f)] private float divePitchTarget = 0.8f;
@@ -48,6 +49,9 @@ public class GestureFlightInput : MonoBehaviour, IFlightInput
 
     [Tooltip("Throttle classifications below this confidence are ignored - Throttle holds its current value instead of drifting on a noisy guess.")]
     [SerializeField, Range(0f, 1f)] private float minThrottleConfidence = 0.6f;
+
+    [Tooltip("Plays once, right when the throttle classifier switches into 'curl' (slowing down) - not every frame the pose is held. Leave empty to skip.")]
+    [SerializeField] private AudioClip slowDownClip;
 
     /// <summary>Smoothed pitch axis, range [-1, 1].</summary>
     public float PitchInput { get; private set; }
@@ -76,14 +80,21 @@ public class GestureFlightInput : MonoBehaviour, IFlightInput
     // last confident throttle direction: +1 extend, -1 curl, 0 neutral/unsure
     private float _throttleDirection;
 
-    /// <summary>Lets a bootstrapper set the device path before Start() opens it, mirroring GloveFlightInput.Configure.</summary>
-    public void Configure(string gloveDevicePath)
+    private AudioSource _audioSource;
+
+    /// <summary>Lets a bootstrapper set the device path before Start() opens it, mirroring GloveFlightInput.Configure. slowDown overrides the Inspector-assigned clip when non-null.</summary>
+    public void Configure(string gloveDevicePath, AudioClip slowDown = null)
     {
         devicePath = gloveDevicePath;
+        if (slowDown != null) slowDownClip = slowDown;
     }
 
     private void Start()
     {
+        _audioSource = GetComponent<AudioSource>();
+        _audioSource.playOnAwake = false;
+        _audioSource.spatialBlend = 0f; // a gesture-feedback cue for the player, not a positioned world sound
+
         try
         {
             _readStream = new FileStream(devicePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
@@ -199,6 +210,7 @@ public class GestureFlightInput : MonoBehaviour, IFlightInput
 
         if (throttleConfidence >= minThrottleConfidence)
         {
+            bool wasCurling = _throttleDirection < 0f;
             switch (throttleLabel)
             {
                 case "neutral":
@@ -213,6 +225,11 @@ public class GestureFlightInput : MonoBehaviour, IFlightInput
                 default:
                     break;
             }
+
+            // edge-triggered on entering curl, so it plays once per gesture instead of every line
+            // the classifier keeps reporting "curl" while the pose is held.
+            if (!wasCurling && _throttleDirection < 0f && slowDownClip != null)
+                _audioSource.PlayOneShot(slowDownClip);
         }
         // else: hold the last confident throttle direction instead of jittering.
     }
