@@ -1,9 +1,7 @@
 #include <Wire.h>
 
 // Streams raw, unfiltered readings from all three MPU-6050s (hub, index,
-// middle) for capture_gesture_data.py to record and label - unlike
-// flight_controller.ino, which reports a filtered/zero-calibrated angle
-// instead of raw samples.
+// middle) for capture_gesture_data.py to record and label.
 //
 // One CSV line per sample, hub then index then middle, 6 raw axes each:
 //   "<hAX>,<hAY>,<hAZ>,<hGX>,<hGY>,<hGZ>,<iAX>,...,<iGZ>,<mAX>,...,<mGZ>\n"

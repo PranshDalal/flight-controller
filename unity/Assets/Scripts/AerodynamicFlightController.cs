@@ -10,6 +10,7 @@ public class AerodynamicFlightController : MonoBehaviour
 {
     // IFlightInput can't be a [SerializeField] (plain interface, no Inspector support) - wired via
     // SetFlightInput() from WorldBootstrapper, with a FindObjectOfType fallback below.
+    // GestureFlightInput (the glove's on-device gesture classifier) is the only flight input.
     private IFlightInput flightInput;
 
     [Header("Aircraft Properties")]
@@ -101,9 +102,7 @@ public class AerodynamicFlightController : MonoBehaviour
 
         if (flightInput == null)
         {
-            flightInput = FindObjectOfType<GloveFlightInput>() as IFlightInput
-                          ?? FindObjectOfType<GestureFlightInput>() as IFlightInput
-                          ?? FindObjectOfType<KeyboardFlightInput>() as IFlightInput;
+            flightInput = FindObjectOfType<GestureFlightInput>() as IFlightInput;
             if (flightInput == null)
                 Debug.LogWarning("[AerodynamicFlightController] No flight input source found in scene; flying with neutral input.");
         }

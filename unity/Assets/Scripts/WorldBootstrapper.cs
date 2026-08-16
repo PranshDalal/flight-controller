@@ -2,8 +2,8 @@ using UnityEngine;
 
 // Procedurally builds a minimal open-world flight-sim scene at runtime: a low-poly landscape,
 // an active runway, a placeholder airplane wired up with AerodynamicFlightController and
-// CrashEffects, an input manager running KeyboardFlightInput, a SmoothFlightCamera chasing the
-// plane, and a speed HUD.
+// CrashEffects, an input manager running GestureFlightInput (the glove's on-device gesture
+// classifier is the only flight input), a SmoothFlightCamera chasing the plane, and a speed HUD.
 //
 // Usage: drop this on a single empty GameObject in an empty scene and press Play. No manual
 // scene setup required. Swap the placeholder primitive airplane for a real model later by
@@ -20,18 +20,8 @@ public class WorldBootstrapper : MonoBehaviour
     [SerializeField] private float runwayLength = 1500f;
     [SerializeField] private float runwayWidth = 45f;
 
-    private enum InputSource
-    {
-        Keyboard,
-        Glove,            // Continuous hand-tilt pitch/roll (GloveFlightInput) - flight_controller.ino
-        GestureClassifier // On-device gesture classification (GestureFlightInput) - gesture_classifier.ino
-    }
-
     [Header("Input Source")]
-    [Tooltip("Keyboard: arrow keys/WASD. Glove: continuous hand-tilt pitch/roll over USB serial (flight_controller.ino) - throttle auto-ramps to cruise, yaw is automatic. Gesture Classifier: on-device ML gesture recognition over USB serial (gesture_classifier.ino) - pitch/roll snap between fixed poses instead of continuous tilt, throttle is finger-driven.")]
-    [SerializeField] private InputSource inputSource = InputSource.Keyboard;
-
-    [Tooltip("Device path the glove's Arduino Nano 33 BLE Sense enumerates as (check the Arduino IDE's port dropdown), e.g. /dev/cu.usbmodem111201 on macOS. Used by both Glove and Gesture Classifier input sources.")]
+    [Tooltip("Device path the glove's Arduino Nano 33 BLE Sense enumerates as (check the Arduino IDE's port dropdown), e.g. /dev/cu.usbmodem111201 on macOS.")]
     [SerializeField] private string gloveDevicePath = "/dev/cu.usbmodem111201";
 
     [Header("Airplane")]
@@ -183,20 +173,9 @@ public class WorldBootstrapper : MonoBehaviour
     private IFlightInput BuildInputManager()
     {
         var inputManager = new GameObject("Input Manager");
-
-        switch (inputSource)
-        {
-            case InputSource.Glove:
-                var glove = inputManager.AddComponent<GloveFlightInput>();
-                glove.Configure(gloveDevicePath);
-                return glove;
-            case InputSource.GestureClassifier:
-                var gesture = inputManager.AddComponent<GestureFlightInput>();
-                gesture.Configure(gloveDevicePath);
-                return gesture;
-            default:
-                return inputManager.AddComponent<KeyboardFlightInput>();
-        }
+        var gesture = inputManager.AddComponent<GestureFlightInput>();
+        gesture.Configure(gloveDevicePath);
+        return gesture;
     }
 
     private Transform BuildAirplane(Transform spawnPoint, IFlightInput flightInput)

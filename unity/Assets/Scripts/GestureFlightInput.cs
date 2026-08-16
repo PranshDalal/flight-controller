@@ -4,8 +4,7 @@ using System.IO;
 using System.Threading;
 using UnityEngine;
 
-// Reads gesture_classifier.ino's on-device classifiers over serial and exposes the same input
-// surface as GloveFlightInput/KeyboardFlightInput. Expects
+// Reads gesture_classifier.ino's on-device classifiers over serial. Expects
 // "<poseLabel>,<poseConfidence>,<throttleLabel>,<throttleConfidence>\n" - poseLabel is one of the 9
 // hand-orientation classes (including the diagonal combos) from the hub sensor, throttleLabel is
 // neutral/extend/curl from the fingers. Separate models so pose and throttle can be driven at once.
@@ -14,11 +13,11 @@ using UnityEngine;
 // only works if capture_gesture_data.py actually recorded it, and only one pose label comes back
 // per sample. Each label maps to a fixed (pitch, roll) target below.
 //
-// Throttle isn't auto-ramped here like GloveFlightInput - it's driven by the finger gesture:
-// "extend" ramps up, "curl" ramps down, "neutral"/low-confidence holds steady.
+// Throttle is driven entirely by the finger gesture: "extend" ramps it up, "curl" ramps it down,
+// "neutral"/low-confidence holds steady.
 //
-// Opens the device as a raw Unix character file, same reasoning as GloveFlightInput (Unity's
-// bundled SerialPort is Windows-only).
+// Opens the device as a raw Unix character file instead of using System.IO.Ports - Unity 6's
+// bundled SerialPort is Windows-only. So devicePath needs to be a Unix path, not a COM name.
 [RequireComponent(typeof(AudioSource))]
 public class GestureFlightInput : MonoBehaviour, IFlightInput
 {
@@ -82,7 +81,7 @@ public class GestureFlightInput : MonoBehaviour, IFlightInput
 
     private AudioSource _audioSource;
 
-    /// <summary>Lets a bootstrapper set the device path before Start() opens it, mirroring GloveFlightInput.Configure. slowDown overrides the Inspector-assigned clip when non-null.</summary>
+    /// <summary>Lets a bootstrapper set the device path before Start() opens it. slowDown overrides the Inspector-assigned clip when non-null.</summary>
     public void Configure(string gloveDevicePath, AudioClip slowDown = null)
     {
         devicePath = gloveDevicePath;
