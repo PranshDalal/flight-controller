@@ -154,9 +154,10 @@ MonoBehaviour:
   runwayLength: 1500
   runwayWidth: 45
   inputSource: 2
-  gloveDevicePath: /dev/cu.usbmodem11401
+  gloveDevicePath: /dev/cu.usbmodem1401
   aircraftModelPrefab: {fileID: 919132149155446097, guid: ed01842ecafc44a96bd82182654209e9, type: 3}
   engineStartupClip: {fileID: 8300000, guid: 957d0d3af6af1475eaf2134bed4eecb2, type: 3}
+  clearForTakeoffClip: {fileID: 8300000, guid: 18720ba40982c48a2922ea88e0faa409, type: 3}
 --- !u!4 &858154606
 Transform:
   m_ObjectHideFlags: 0

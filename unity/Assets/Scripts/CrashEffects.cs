@@ -17,6 +17,7 @@ public class CrashEffects : MonoBehaviour
     private Rigidbody _rigidbody;
     private AerodynamicFlightController _flightController;
     private EngineStartup _engineStartup;
+    private TakeoffClearance _takeoffClearance;
     private Renderer[] _renderers;
     private Vector3 _spawnPosition;
     private Quaternion _spawnRotation;
@@ -27,6 +28,7 @@ public class CrashEffects : MonoBehaviour
         _rigidbody = GetComponent<Rigidbody>();
         _flightController = GetComponent<AerodynamicFlightController>();
         _engineStartup = GetComponent<EngineStartup>();
+        _takeoffClearance = GetComponent<TakeoffClearance>();
         _renderers = GetComponentsInChildren<Renderer>();
         _spawnPosition = transform.position;
         _spawnRotation = transform.rotation;
@@ -72,6 +74,7 @@ public class CrashEffects : MonoBehaviour
         foreach (Renderer r in _renderers) r.enabled = true;
         if (_flightController != null) _flightController.enabled = true;
         if (_engineStartup != null) _engineStartup.Replay();
+        if (_takeoffClearance != null) _takeoffClearance.Play();
 
         _hasCrashed = false;
     }

@@ -41,6 +41,9 @@ public class WorldBootstrapper : MonoBehaviour
     [Tooltip("Plays once the player asks for throttle (and again after respawning from a crash), then loops its last few seconds to keep the engine running. Thrust stays at zero until it finishes spooling up, so the plane can't start rolling before the engine sounds ready. Leave empty to skip the sound and allow thrust immediately.")]
     [SerializeField] private AudioClip engineStartupClip;
 
+    [Tooltip("Plays once immediately when the plane spawns (and again on every respawn after a crash) - an ATC clearance line, independent of engine startup. Leave empty to skip.")]
+    [SerializeField] private AudioClip clearForTakeoffClip;
+
     private readonly System.Random _rng = new System.Random(1337);
 
     private void Awake()
@@ -272,6 +275,10 @@ public class WorldBootstrapper : MonoBehaviour
         // added before AerodynamicFlightController so its GetComponent<EngineStartup>() in Awake() finds it
         var engineStartup = planeRoot.AddComponent<EngineStartup>();
         engineStartup.Configure(engineStartupClip, flightInput);
+
+        // added before CrashEffects so its GetComponent<TakeoffClearance>() in Awake() finds it
+        var takeoffClearance = planeRoot.AddComponent<TakeoffClearance>();
+        takeoffClearance.Configure(clearForTakeoffClip);
 
         var flightController = planeRoot.AddComponent<AerodynamicFlightController>();
         flightController.SetFlightInput(flightInput);
