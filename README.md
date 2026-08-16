@@ -83,11 +83,7 @@ open glove/testing/mpu.ino in Arduino IDE and flash it
 
 ### 1. Flash the glove
 
-Flash `glove/src/gesture_classifier/gesture_classifier.ino` with the Arduino IDE. It
-needs the
-[tflite-micro-arduino-examples](https://github.com/tensorflow/tflite-micro-arduino-examples)
-library cloned into `~/Documents/Arduino/libraries/Arduino_TensorFlowLite` - the
-deprecated `Arduino_TensorFlowLite` Library Manager package won't work.
+Flash `glove/src/gesture_classifier/gesture_classifier.ino` with the Arduino IDE. 
 
 ### 2. Open the Unity project
 
