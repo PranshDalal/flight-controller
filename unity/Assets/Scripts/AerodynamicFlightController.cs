@@ -1,17 +1,15 @@
 using System;
 using UnityEngine;
 
-// Aerodynamically grounded flight model: lift/drag come from angle of attack (AoA) and airspeed via
-// the standard dynamic-pressure equations (L = q*S*CL, D = q*S*CD). Two selectable presets:
-//
-//   Arcade    - the original tuning: a flat-plate CL = liftSlope*sin(2*AoA) curve on a 1,000 kg,
-//               16 m^2 airplane, instant thrust, airspeed-proportional control authority.
-//   Realistic - a Gulfstream G650ER: finite-wing lift slope with a continuous stall that blends into
-//               flat-plate lift, CD = CD0 + k*CL^2 plus post-stall and compressibility drag, real
-//               mass/thrust/wing geometry, an aircraft-like inertia tensor, engine spool lag, and
-//               fly-by-wire-style control authority that scales with dynamic pressure, and the
-//               1976 US Standard Atmosphere (ISA): density and speed of sound fall with altitude,
-//               and thrust lapses with density and Mach.
+// Flight model for a Gulfstream G650ER. Lift and drag come from angle of attack (AoA) and airspeed
+// via the dynamic-pressure equations (L = q*S*CL, D = q*S*CD):
+//   - finite-wing lift slope with a continuous stall that blends into flat-plate lift
+//   - CD = CD0 + k*CL^2, plus post-stall and compressibility (Mach) drag
+//   - real mass, thrust and wing geometry, an aircraft-like inertia tensor, and engine spool lag
+//   - the 1976 US Standard Atmosphere (ISA): density and speed of sound fall with altitude, and
+//     thrust lapses with density and Mach
+//   - fly-by-wire-style control authority that scales with dynamic pressure, a ground mode for
+//     rotation, and VMO/MMO overspeed protection
 //
 // G650ER sources (checked 2026-11-21):
 //   - Wingspan 30.35 m (99 ft 7 in), rated takeoff thrust 75.20 kN (16,900 lbf) per BR725, MTOW
@@ -29,37 +27,26 @@ using UnityEngine;
 //     11 km, isothermal 216.65 K to 20 km). Certified ceiling 51,000 ft: Gulfstream / Wikipedia.
 // Not published (engineering estimates, labeled where used): CD0, Oswald e, CLmax, inertia,
 // thrust-lapse exponents.
-public enum FlightModelPresetType { Arcade, Realistic }
-
 [Serializable]
-public class FlightModelPreset
+public class AircraftModel
 {
-    [Tooltip("Off = original arcade curves. On = finite-wing lift with stall, CD = CD0 + k*CL^2, compressibility drag.")]
-    public bool useRealisticAerodynamics;
+    /// <summary>ISA sea-level air density (kg/m^3).</summary>
+    public const float SeaLevelDensity = 1.225f;
 
     [Header("Mass")]
     public float mass;
-    [Tooltip("Off = Unity's automatic inertia from the collider. On = use inertiaTensor below.")]
-    public bool useCustomInertia;
     [Tooltip("Principal moments of inertia (kg*m^2) in Unity's local axes: x = pitch, y = yaw, z = roll.")]
     public Vector3 inertiaTensor;
 
-    [Header("Wing & Air")]
+    [Header("Wing")]
     [Tooltip("Wing reference area S (m^2).")]
     public float wingArea;
-    [Tooltip("Wingspan b (m). Realistic model only: aspect ratio AR = b^2 / S.")]
+    [Tooltip("Wingspan b (m). Aspect ratio AR = b^2 / S.")]
     public float wingSpan;
-    [Tooltip("Air density (kg/m^3): used as-is when the standard atmosphere is off, and as the sea-level reference for control authority. 1.225 = sea level ISA.")]
-    public float airDensity;
     [Tooltip("Wing incidence (degrees) added to the fuselage AoA, so the wing still lifts with the fuselage level.")]
     public float wingIncidenceDegrees;
 
-    [Header("Arcade Lift/Drag  (CL = liftSlope*sin(2a), CD = parasitic + induced*sin^2 a)")]
-    public float liftSlope;
-    public float parasiticDrag;
-    public float inducedDragFactor;
-
-    [Header("Realistic Lift/Drag")]
+    [Header("Lift & Drag")]
     [Tooltip("Peak lift coefficient at the stall angle. Stall angle = CLmax / (finite-wing lift slope).")]
     public float maxLiftCoefficient;
     [Tooltip("Degrees past the stall angle over which lift blends (smoothly) into the flat-plate curve 2*sin(a)*cos(a).")]
@@ -70,44 +57,34 @@ public class FlightModelPreset
     public float oswaldEfficiency;
     [Tooltip("Mach number where compressibility drag has risen by 0.002 (Korn/Lock drag-rise model).")]
     public float dragDivergenceMach;
-    [Tooltip("Speed of sound (m/s) when the standard atmosphere is off. 340.3 = sea level ISA.")]
-    public float speedOfSound;
 
     [Header("Atmosphere")]
-    [Tooltip("On = air density and speed of sound follow the International Standard Atmosphere at the aircraft's altitude. Off = constant airDensity / speedOfSound.")]
-    public bool useStandardAtmosphere;
     [Tooltip("Pressure altitude (m) of world Y = 0, i.e. the runway's elevation.")]
     public float fieldElevation;
     [Tooltip("Real altitude per scene meter of height. 1 = true scale; raise it to reach cruise altitude faster.")]
     public float altitudeScale;
+
+    [Header("Propulsion")]
+    [Tooltip("Total sea-level static thrust (N) at full throttle.")]
+    public float maxThrust;
+    [Tooltip("First-order engine spool time constant (s).")]
+    public float engineTimeConstant;
     [Tooltip("Thrust scales with (density / sea-level density)^this. ~0.7 for a high-bypass turbofan.")]
     public float thrustDensityExponent;
     [Tooltip("Thrust scales with (1 - this * Mach): ram drag on a high-bypass fan.")]
     public float thrustMachLapse;
 
     [Header("Overspeed Protection")]
-    [Tooltip("Fly-by-wire-style speed protection: thrust tapers to idle approaching VMO/MMO, and above the limit the nose is pitched up. Dives can still briefly overshoot.")]
-    public bool overspeedProtection;
-    [Tooltip("Maximum operating speed, knots equivalent airspeed (~calibrated airspeed below Mach 0.5-ish).")]
+    [Tooltip("Maximum operating speed, knots equivalent airspeed (~calibrated airspeed).")]
     public float vmoKnots;
     [Tooltip("Maximum operating Mach number.")]
     public float mmo;
-    [Tooltip("Fraction below the limit where thrust starts tapering, and above it where pitch-up reaches full authority.")]
+    [Tooltip("Fraction below the limit where thrust starts tapering to idle, and above it where the automatic pitch-up reaches full authority.")]
     public float overspeedBand;
 
-    [Header("Propulsion")]
-    [Tooltip("Total max thrust (N) at full throttle.")]
-    public float maxThrust;
-    [Tooltip("First-order engine spool time constant (s). 0 = thrust follows throttle instantly.")]
-    public float engineTimeConstant;
-
     [Header("Control Surfaces")]
-    [Tooltip("Off = authority rises linearly with airspeed. On = rises with dynamic pressure (speed^2), like real control surfaces, and holds constant above fullControlAirspeed (fly-by-wire).")]
-    public bool dynamicPressureAuthority;
-    [Tooltip("Airspeed (m/s) at which control authority reaches full.")]
+    [Tooltip("Sea-level airspeed (m/s) at which control authority reaches full. Authority scales with dynamic pressure below it and holds constant above it (fly-by-wire).")]
     public float fullControlAirspeed;
-    [Tooltip("While touching the ground, drop the pitch-hold torque (a fly-by-wire 'ground mode') so the nose can be rotated for takeoff.")]
-    public bool directLawOnGround;
     [Tooltip("Angular acceleration (rad/s^2) per unit PitchInput at full authority.")]
     public float pitchSensitivity;
     [Tooltip("Angular acceleration (rad/s^2) per unit RollInput at full authority.")]
@@ -140,24 +117,12 @@ public class FlightModelPreset
     public float StallAngleRad => maxLiftCoefficient / LiftSlopePerRad;
     /// <summary>Induced-drag factor k = 1 / (pi * e * AR).</summary>
     public float InducedDragK => 1f / (Mathf.PI * oswaldEfficiency * AspectRatio);
-    /// <summary>1-g stall speed (m/s) at this preset's mass, wing area and air density.</summary>
+    /// <summary>1-g sea-level stall speed (m/s).</summary>
     // standard g as a constant: this runs from field initializers, where Unity's Physics API can't be called
-    public float StallSpeed => Mathf.Sqrt(2f * mass * 9.81f / (airDensity * wingArea * maxLiftCoefficient));
+    public float StallSpeed => Mathf.Sqrt(2f * mass * 9.81f / (SeaLevelDensity * wingArea * maxLiftCoefficient));
 
     /// <summary>Real altitude (m) for a world-space height.</summary>
     public float AltitudeAt(float worldY) => fieldElevation + worldY * altitudeScale;
-
-    /// <summary>Air density (kg/m^3) and speed of sound (m/s) at a world-space height.</summary>
-    public void Air(float worldY, out float density, out float soundSpeed)
-    {
-        if (!useStandardAtmosphere)
-        {
-            density = airDensity;
-            soundSpeed = speedOfSound;
-            return;
-        }
-        StandardAtmosphere(AltitudeAt(worldY), out density, out soundSpeed);
-    }
 
     /// <summary>
     /// International Standard Atmosphere (US Standard Atmosphere 1976) up to 20 km: temperature
@@ -190,30 +155,20 @@ public class FlightModelPreset
     /// </summary>
     public float SpeedLimitRatio(float trueAirspeed, float density, float mach)
     {
-        if (!overspeedProtection) return 0f;
         const float knotsToMs = 0.514444f;
-        float equivalentAirspeed = trueAirspeed * Mathf.Sqrt(density / 1.225f);
+        float equivalentAirspeed = trueAirspeed * Mathf.Sqrt(density / SeaLevelDensity);
         return Mathf.Max(equivalentAirspeed / (vmoKnots * knotsToMs), mach / mmo);
     }
 
     /// <summary>Available thrust as a fraction of sea-level static thrust.</summary>
     public float ThrustLapse(float density, float mach)
     {
-        float densityFactor = useStandardAtmosphere ? Mathf.Pow(density / 1.225f, thrustDensityExponent) : 1f;
-        return densityFactor * Mathf.Max(0f, 1f - thrustMachLapse * mach);
+        return Mathf.Pow(density / SeaLevelDensity, thrustDensityExponent) * Mathf.Max(0f, 1f - thrustMachLapse * mach);
     }
 
     /// <summary>Lift and drag coefficients at a wing AoA (radians, -pi..pi) and Mach number.</summary>
     public void Coefficients(float alpha, float mach, out float cl, out float cd)
     {
-        if (!useRealisticAerodynamics)
-        {
-            cl = liftSlope * Mathf.Sin(2f * alpha);
-            float s = Mathf.Sin(alpha);
-            cd = parasiticDrag + inducedDragFactor * s * s;
-            return;
-        }
-
         // 0 below the stall angle, rising smoothly (zero slope at both ends) to 1 at
         // stall + stallBlendDegrees - lift has no step, so there's no jitter at the stall.
         float stallBlend = Mathf.SmoothStep(0f, 1f, (Mathf.Abs(alpha) - StallAngleRad) / (stallBlendDegrees * Mathf.Deg2Rad));
@@ -231,53 +186,15 @@ public class FlightModelPreset
             cd += 20f * Mathf.Pow(mach - criticalMach, 4f);
     }
 
-    /// <summary>The original tuning, value for value.</summary>
-    public static FlightModelPreset Arcade() => new FlightModelPreset
-    {
-        useRealisticAerodynamics = false,
-        mass = 1000f,
-        useCustomInertia = false,
-        wingArea = 16f,
-        airDensity = 1.225f,
-        wingIncidenceDegrees = 6f,
-        liftSlope = 0.55f,
-        parasiticDrag = 0.05f,
-        inducedDragFactor = 0.6f,
-        maxThrust = 6000f,
-        engineTimeConstant = 0f,
-        dynamicPressureAuthority = false,
-        fullControlAirspeed = 30f,
-        directLawOnGround = false,
-        pitchSensitivity = 3.5f,
-        rollSensitivity = 4.5f,
-        yawSensitivity = 2f,
-        yawStability = 1.5f,
-        maxPitchAngleDeg = 20f,
-        rollStability = 1.5f,
-        pitchDamping = 2f,
-        rollDamping = 2.5f,
-        yawDamping = 1.5f,
-        rigidbodyAngularDamping = 0.5f,
-        maxAirspeed = 400f,
-        maxAngularVelocityDegPerSec = 120f,
-        // unused by the arcade curves; filled so switching the toggle alone stays sane
-        wingSpan = 30.35f, maxLiftCoefficient = 1.45f, stallBlendDegrees = 10f, zeroLiftDrag = 0.02f,
-        oswaldEfficiency = 0.8f, dragDivergenceMach = 0.9f, speedOfSound = 340.3f,
-        // the original model had no atmosphere and no thrust lapse
-        useStandardAtmosphere = false, fieldElevation = 0f, altitudeScale = 1f,
-        thrustDensityExponent = 0f, thrustMachLapse = 0f,
-        overspeedProtection = false, vmoKnots = 340f, mmo = 0.925f, overspeedBand = 0.02f,
-    };
-
     /// <summary>Gulfstream G650ER. Every gain below is derived from aircraft data or a stated handling target.</summary>
-    public static FlightModelPreset Realistic()
+    public static AircraftModel G650ER()
     {
         // Published aircraft data (sources in the file header)
         const float wingSpanM = 30.35f;
         const float wingAreaM2 = 119.2f;
         const float lengthM = 30.40f;
         const float thrustPerEngineN = 75200f;
-        const float mmo = 0.925f;
+        const float maxOperatingMach = 0.925f;
         const float flyingMassKg = 40000f; // mid-mission: between BOW (~24,000 kg) and MTOW (46,992 kg)
 
         // Estimated radii of gyration as fractions of the reference length, in the range Roskam
@@ -295,41 +212,31 @@ public class FlightModelPreset
         const float weathervaneFrequency = 1.2f;   // rad/s, directional (Dutch-roll-like) mode
         const float weathervaneDampingRatio = 0.7f;
 
-        var p = new FlightModelPreset
+        var p = new AircraftModel
         {
-            useRealisticAerodynamics = true,
             mass = flyingMassKg,
-            useCustomInertia = true,
             wingArea = wingAreaM2,
             wingSpan = wingSpanM,
-            airDensity = 1.225f,
-            speedOfSound = 340.3f,
-            useStandardAtmosphere = true,
-            fieldElevation = 0f,         // sea-level runway
-            altitudeScale = 1f,          // true scale: FL410 = 12,497 m of scene height
-            thrustDensityExponent = 0.7f, // estimate for a high-bypass turbofan
-            thrustMachLapse = 0.3f,       // estimate
-            overspeedProtection = true,
-            vmoKnots = 340f,              // KCAS (treated as equivalent airspeed)
-            mmo = mmo,
-            overspeedBand = 0.02f,        // taper over the last 2% below the limit
             wingIncidenceDegrees = 2.5f,
-            maxLiftCoefficient = 1.45f, // estimate; requested range 1.4-1.6
+            maxLiftCoefficient = 1.45f, // estimate; within 1.4-1.6
             stallBlendDegrees = 10f,
             zeroLiftDrag = 0.020f,      // estimate: typical clean business jet 0.018-0.022
             oswaldEfficiency = 0.8f,
             dragDivergenceMach = 0.90f, // the G650's high-speed cruise Mach; MMO is 0.925
+            fieldElevation = 0f,         // sea-level runway
+            altitudeScale = 1f,          // true scale: FL410 = 12,497 m of scene height
             maxThrust = 2f * thrustPerEngineN,
             // first-order lag reaching 15% -> 95% in 5 s: 5 = tau * ln(0.85 / 0.05)
             engineTimeConstant = 5f / Mathf.Log(0.85f / 0.05f),
-            dynamicPressureAuthority = true,
-            directLawOnGround = true,
+            thrustDensityExponent = 0.7f, // estimate for a high-bypass turbofan
+            thrustMachLapse = 0.3f,       // estimate
+            vmoKnots = 340f,              // KCAS (treated as equivalent airspeed)
+            mmo = maxOperatingMach,
+            overspeedBand = 0.02f,        // taper over the last 2% below the limit
             maxPitchAngleDeg = heldPitchDeg,
             rigidbodyAngularDamping = 0.05f, // aero rate damping is modeled explicitly
-            maxAirspeed = 1.1f * mmo * 340.3f,
+            maxAirspeed = 1.1f * maxOperatingMach * 340.3f,
             maxAngularVelocityDegPerSec = 1.5f * maxRollRateDeg,
-            // keep the arcade fields filled so the toggle alone still flies
-            liftSlope = 0.55f, parasiticDrag = 0.05f, inducedDragFactor = 0.6f,
         };
 
         float m = p.mass;
@@ -344,8 +251,8 @@ public class FlightModelPreset
         p.rollSensitivity = maxRollRateDeg * Mathf.Deg2Rad * p.rollDamping;
         p.rollStability = p.rollSensitivity / Mathf.Sin(heldBankDeg * Mathf.Deg2Rad);
 
-        // Pitch: enough angular acceleration to rotate the nose on the runway (same as arcade),
-        // with damping that caps the steady pitch rate at maxPitchRateDeg.
+        // Pitch: enough angular acceleration to rotate the nose on the runway, with damping that
+        // caps the steady pitch rate at maxPitchRateDeg.
         p.pitchSensitivity = 3.5f;
         p.pitchDamping = p.pitchSensitivity / (maxPitchRateDeg * Mathf.Deg2Rad);
 
@@ -368,20 +275,16 @@ public class AerodynamicFlightController : MonoBehaviour
     // GestureFlightInput (the glove's on-device gesture classifier) is the only flight input.
     private IFlightInput flightInput;
 
-    [Tooltip("Which preset flies the aircraft. Can be switched live in Play mode.")]
-    [SerializeField] private FlightModelPresetType preset = FlightModelPresetType.Realistic;
-
-    [SerializeField] private FlightModelPreset arcadePreset = FlightModelPreset.Arcade();
-    [SerializeField] private FlightModelPreset realisticPreset = FlightModelPreset.Realistic();
+    [Tooltip("G650ER flight parameters. Editable in the Inspector; mass/inertia changes apply in Play mode.")]
+    [SerializeField] private AircraftModel aircraft = AircraftModel.G650ER();
 
     private Rigidbody _rigidbody;
     private EngineStartup _engineStartup;
-    private FlightModelPreset _appliedPreset;
     private float _thrustFraction;       // spooled engine output, 0..1
     private float _lastGroundContactTime = float.NegativeInfinity;
     private float _speedLimitRatio;      // max(EAS/VMO, M/MMO), refreshed each physics step
 
-    public FlightModelPreset ActivePreset => preset == FlightModelPresetType.Arcade ? arcadePreset : realisticPreset;
+    public AircraftModel Aircraft => aircraft;
 
     private void Awake()
     {
@@ -394,7 +297,7 @@ public class AerodynamicFlightController : MonoBehaviour
         // steps - at this aircraft's speed that reads as constant vibration otherwise.
         _rigidbody.interpolation = RigidbodyInterpolation.Interpolate;
 
-        ApplyPresetToRigidbody();
+        ApplyAircraftToRigidbody();
 
         if (flightInput == null)
         {
@@ -404,26 +307,23 @@ public class AerodynamicFlightController : MonoBehaviour
         }
     }
 
+    // Inspector edits during Play mode take effect immediately
+    private void OnValidate()
+    {
+        if (_rigidbody != null) ApplyAircraftToRigidbody();
+    }
+
     /// <summary>Lets a bootstrapper/spawner wire the input source without a serialized field.</summary>
     public void SetFlightInput(IFlightInput input) => flightInput = input;
 
-    // mass, inertia and rigidbody limits come from the active preset
-    private void ApplyPresetToRigidbody()
+    // mass, inertia and rigidbody limits come from the aircraft model
+    private void ApplyAircraftToRigidbody()
     {
-        FlightModelPreset p = ActivePreset;
-        _rigidbody.mass = p.mass;
-        if (p.useCustomInertia)
-        {
-            _rigidbody.inertiaTensor = p.inertiaTensor;
-            _rigidbody.inertiaTensorRotation = Quaternion.identity;
-        }
-        else
-        {
-            _rigidbody.ResetInertiaTensor();
-        }
-        _rigidbody.angularDamping = p.rigidbodyAngularDamping;
-        _rigidbody.maxAngularVelocity = p.maxAngularVelocityDegPerSec * Mathf.Deg2Rad;
-        _appliedPreset = p;
+        _rigidbody.mass = aircraft.mass;
+        _rigidbody.inertiaTensor = aircraft.inertiaTensor;
+        _rigidbody.inertiaTensorRotation = Quaternion.identity;
+        _rigidbody.angularDamping = aircraft.rigidbodyAngularDamping;
+        _rigidbody.maxAngularVelocity = aircraft.maxAngularVelocityDegPerSec * Mathf.Deg2Rad;
     }
 
     private void OnCollisionStay(Collision collision) => _lastGroundContactTime = Time.fixedTime;
@@ -432,17 +332,14 @@ public class AerodynamicFlightController : MonoBehaviour
 
     private void FixedUpdate()
     {
-        if (_appliedPreset != ActivePreset)
-            ApplyPresetToRigidbody(); // preset switched in the Inspector
-
         Vector3 velocity = _rigidbody.linearVelocity;
         float speed = velocity.magnitude;
         Vector3 localVelocity = transform.InverseTransformDirection(velocity);
 
-        // local air at the aircraft's altitude (constant in the arcade preset)
-        ActivePreset.Air(_rigidbody.position.y, out float density, out float soundSpeed);
+        // local air at the aircraft's altitude
+        AircraftModel.StandardAtmosphere(aircraft.AltitudeAt(_rigidbody.position.y), out float density, out float soundSpeed);
         float mach = speed / soundSpeed;
-        _speedLimitRatio = ActivePreset.SpeedLimitRatio(speed, density, mach);
+        _speedLimitRatio = aircraft.SpeedLimitRatio(speed, density, mach);
 
         ApplyThrust(density, mach);
 
@@ -455,38 +352,35 @@ public class AerodynamicFlightController : MonoBehaviour
 
     private void ApplyThrust(float density, float mach)
     {
-        FlightModelPreset p = ActivePreset;
         float throttle = flightInput != null ? flightInput.Throttle : 0f;
         float engineReadiness = _engineStartup != null ? _engineStartup.Readiness : 1f;
         float commanded = throttle * engineReadiness;
 
         // first-order spool-up/down toward the commanded thrust
-        _thrustFraction = p.engineTimeConstant > 0f
-            ? Mathf.Lerp(_thrustFraction, commanded, 1f - Mathf.Exp(-Time.fixedDeltaTime / p.engineTimeConstant))
+        _thrustFraction = aircraft.engineTimeConstant > 0f
+            ? Mathf.Lerp(_thrustFraction, commanded, 1f - Mathf.Exp(-Time.fixedDeltaTime / aircraft.engineTimeConstant))
             : commanded;
 
         // thinner air and higher Mach reduce what the engines can deliver
-        float availableThrust = p.maxThrust * p.ThrustLapse(density, mach);
+        float availableThrust = aircraft.maxThrust * aircraft.ThrustLapse(density, mach);
 
         // overspeed protection: thrust fades to idle over the last overspeedBand below VMO/MMO
-        if (p.overspeedProtection)
-            availableThrust *= Mathf.Clamp01((1f - _speedLimitRatio) / p.overspeedBand);
+        availableThrust *= Mathf.Clamp01((1f - _speedLimitRatio) / aircraft.overspeedBand);
+
         _rigidbody.AddRelativeForce(Vector3.forward * (availableThrust * _thrustFraction), ForceMode.Force);
     }
 
     private void ApplyAerodynamics(Vector3 velocity, float speed, Vector3 localVelocity, float density, float mach)
     {
-        FlightModelPreset p = ActivePreset;
-
         // angle between the fuselage's forward axis and the relative airflow, plus wing incidence
-        float angleOfAttack = Mathf.Atan2(-localVelocity.y, localVelocity.z) + p.wingIncidenceDegrees * Mathf.Deg2Rad;
+        float angleOfAttack = Mathf.Atan2(-localVelocity.y, localVelocity.z) + aircraft.wingIncidenceDegrees * Mathf.Deg2Rad;
         if (angleOfAttack > Mathf.PI) angleOfAttack -= 2f * Mathf.PI;
 
-        p.Coefficients(angleOfAttack, mach, out float liftCoefficient, out float dragCoefficient);
+        aircraft.Coefficients(angleOfAttack, mach, out float liftCoefficient, out float dragCoefficient);
 
         float dynamicPressure = 0.5f * density * speed * speed;
-        float liftForce = dynamicPressure * p.wingArea * liftCoefficient;
-        float dragForce = dynamicPressure * p.wingArea * dragCoefficient;
+        float liftForce = dynamicPressure * aircraft.wingArea * liftCoefficient;
+        float dragForce = dynamicPressure * aircraft.wingArea * dragCoefficient;
 
         Vector3 velocityDirection = velocity / speed;
 
@@ -503,37 +397,34 @@ public class AerodynamicFlightController : MonoBehaviour
 
     private void ApplyControlTorque(float speed, Vector3 localVelocity, float density)
     {
-        FlightModelPreset p = ActivePreset;
         float pitchInput = flightInput != null ? flightInput.PitchInput : 0f;
         float rollInput = flightInput != null ? flightInput.RollInput : 0f;
         float yawInput = flightInput != null ? flightInput.YawInput : 0f;
 
-        // control surfaces need airflow, so authority tapers to zero at zero airspeed - linearly
-        // with speed (arcade) or with dynamic pressure (realistic): q / q_full, where q_full is
-        // the sea-level dynamic pressure at fullControlAirspeed, so thin air at altitude needs
-        // more true airspeed for the same authority
-        float speedRatio = speed / p.fullControlAirspeed;
-        float controlAuthority = Mathf.Clamp01(p.dynamicPressureAuthority
-            ? (density * speed * speed) / (p.airDensity * p.fullControlAirspeed * p.fullControlAirspeed)
-            : speedRatio);
+        // control surfaces need airflow, so authority scales with dynamic pressure: q / q_full,
+        // where q_full is the sea-level dynamic pressure at fullControlAirspeed - thin air at
+        // altitude needs more true airspeed for the same authority
+        float controlAuthority = Mathf.Clamp01((density * speed * speed)
+            / (AircraftModel.SeaLevelDensity * aircraft.fullControlAirspeed * aircraft.fullControlAirspeed));
 
-        float pitchTorque = -pitchInput * p.pitchSensitivity * controlAuthority;
+        float pitchTorque = -pitchInput * aircraft.pitchSensitivity * controlAuthority;
 
         // overspeed protection: past the limit, pitch the nose up (negative = nose up), reaching
         // full pitch authority at overspeedBand over the limit, to trade speed for altitude
-        if (p.overspeedProtection && _speedLimitRatio > 1f)
-            pitchTorque -= p.pitchSensitivity * controlAuthority * Mathf.Clamp01((_speedLimitRatio - 1f) / p.overspeedBand);
+        if (_speedLimitRatio > 1f)
+            pitchTorque -= aircraft.pitchSensitivity * controlAuthority * Mathf.Clamp01((_speedLimitRatio - 1f) / aircraft.overspeedBand);
 
         // transform.forward.y is exactly sin(pitch angle) regardless of roll/yaw, so this needs
         // no separate angle-extraction math. Scaled so full-authority PitchInput=1 settles at
-        // maxPitchAngleDeg instead of rotating through the stall.
-        if (!(p.directLawOnGround && IsTouchingGround))
+        // maxPitchAngleDeg instead of rotating through the stall. Off on the ground (fly-by-wire
+        // "ground mode") so the nose can be rotated for takeoff.
+        if (!IsTouchingGround)
         {
-            float pitchStabilityGain = p.pitchSensitivity / Mathf.Sin(p.maxPitchAngleDeg * Mathf.Deg2Rad);
+            float pitchStabilityGain = aircraft.pitchSensitivity / Mathf.Sin(aircraft.maxPitchAngleDeg * Mathf.Deg2Rad);
             pitchTorque += pitchStabilityGain * transform.forward.y * controlAuthority;
         }
 
-        float rollTorque = -rollInput * p.rollSensitivity * controlAuthority;
+        float rollTorque = -rollInput * aircraft.rollSensitivity * controlAuthority;
 
         // Same trick as pitch stability above: transform.right.y is exactly sin(bank angle)
         // regardless of pitch/yaw. Cross(right, levelRight) gives the axis that rotates right
@@ -544,19 +435,19 @@ public class AerodynamicFlightController : MonoBehaviour
         if (levelRight.sqrMagnitude > 0.0001f)
         {
             Vector3 restoringAxis = Vector3.Cross(right, levelRight.normalized);
-            rollTorque += Vector3.Dot(restoringAxis, transform.forward) * p.rollStability * controlAuthority;
+            rollTorque += Vector3.Dot(restoringAxis, transform.forward) * aircraft.rollStability * controlAuthority;
         }
 
         // sideslipAngle and its contribution to yawTorque share a sign: velocity drifted left of
         // the nose (negative local X) means the nose needs to yaw left (negative) to catch up.
         float sideslipAngle = Mathf.Atan2(localVelocity.x, localVelocity.z);
-        float yawTorque = -yawInput * p.yawSensitivity * controlAuthority
-                         + sideslipAngle * p.yawStability * controlAuthority;
+        float yawTorque = -yawInput * aircraft.yawSensitivity * controlAuthority
+                         + sideslipAngle * aircraft.yawStability * controlAuthority;
 
         Vector3 localAngularVelocity = transform.InverseTransformDirection(_rigidbody.angularVelocity);
-        pitchTorque += -localAngularVelocity.x * p.pitchDamping * controlAuthority;
-        rollTorque += -localAngularVelocity.z * p.rollDamping * controlAuthority;
-        yawTorque += -localAngularVelocity.y * p.yawDamping * controlAuthority;
+        pitchTorque += -localAngularVelocity.x * aircraft.pitchDamping * controlAuthority;
+        rollTorque += -localAngularVelocity.z * aircraft.rollDamping * controlAuthority;
+        yawTorque += -localAngularVelocity.y * aircraft.yawDamping * controlAuthority;
 
         // Acceleration mode: Unity multiplies by the inertia tensor, so these are angular
         // accelerations and the physical torque scales with the aircraft's inertia automatically.
@@ -565,7 +456,7 @@ public class AerodynamicFlightController : MonoBehaviour
 
     private void ClampAirspeed()
     {
-        float maxAirspeed = ActivePreset.maxAirspeed;
+        float maxAirspeed = aircraft.maxAirspeed;
         if (_rigidbody.linearVelocity.sqrMagnitude > maxAirspeed * maxAirspeed)
             _rigidbody.linearVelocity = _rigidbody.linearVelocity.normalized * maxAirspeed;
     }
