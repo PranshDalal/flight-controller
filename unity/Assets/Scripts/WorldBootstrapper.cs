@@ -36,6 +36,8 @@ public class WorldBootstrapper : MonoBehaviour
 
     private readonly System.Random _rng = new System.Random(1337);
 
+    private InfiniteGround _ground;
+
     private void Awake()
     {
         BuildLighting();
@@ -43,6 +45,7 @@ public class WorldBootstrapper : MonoBehaviour
         IFlightInput flightInput = BuildInputManager();
         Transform plane = BuildAirplane(runwayStart, flightInput);
         BuildCamera(plane);
+        _ground.Configure(plane, Camera.main, terrainSize); // endless ground once plane and camera exist
         BuildHud(plane.GetComponent<Rigidbody>());
     }
 
@@ -70,6 +73,7 @@ public class WorldBootstrapper : MonoBehaviour
         ground.name = "Landscape";
         ground.transform.localScale = Vector3.one * (terrainSize / 10f);
         ground.GetComponent<Renderer>().sharedMaterial = CreateColorMaterial(new Color(0.35f, 0.55f, 0.25f));
+        _ground = ground.AddComponent<InfiniteGround>();
 
         var runwayRoot = new GameObject("Runway").transform;
 
@@ -248,8 +252,8 @@ public class WorldBootstrapper : MonoBehaviour
             frictionCombine = PhysicsMaterialCombine.Minimum
         };
 
+        // mass and inertia are set by AerodynamicFlightController from its active preset
         var rb = planeRoot.AddComponent<Rigidbody>();
-        rb.mass = 1000f;
 
         // added before AerodynamicFlightController so its GetComponent<EngineStartup>() in Awake() finds it
         var engineStartup = planeRoot.AddComponent<EngineStartup>();
