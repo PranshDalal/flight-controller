@@ -123,6 +123,13 @@ Run either script with `-h` for full option details.
 
 ---
 
+## Credits
+
+- **Gulfstream G650ER 3D model** by [Luca Martina](https://sketchfab.com/LucaMartina) on Sketchfab
+  ([model page](https://sketchfab.com/3d-models/gulfstream-g650er-b88fa0194c2b49ef8560337ab96d7579)),
+  licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Converted to OBJ in Blender for
+  use in `unity/Assets/Models/gulfstream-g650er/`.
+
 ## AI disclosure
 
 AI assistance (Claude) was used in this project for documentation and debugging

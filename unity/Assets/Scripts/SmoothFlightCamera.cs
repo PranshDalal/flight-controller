@@ -27,6 +27,18 @@ public class SmoothFlightCamera : MonoBehaviour
     [Tooltip("0 = camera never rolls with the aircraft (rock-steady). 1 = camera fully matches the aircraft's bank angle. Kept low so a hard roll doesn't fling the camera around; the orbit position itself never uses roll at all.")]
     [SerializeField, Range(0f, 1f)] private float rollInfluence = 0.25f;
 
+    [Header("View Distance")]
+    [Tooltip("Grow the far clip plane with height so the ground stays visible at cruise altitude.")]
+    [SerializeField] private bool altitudeFarClip = true;
+
+    [Tooltip("Far clip (m) on the ground.")]
+    [SerializeField] private float minFarClip = 1000f;
+
+    [Tooltip("Upper bound on the far clip (m). 400 km is the horizon distance from about 12.5 km (FL410).")]
+    [SerializeField] private float maxFarClip = 400000f;
+
+    private Camera _camera;
+
     private Vector3 _smoothedPosition;
     private Vector3 _shakeOffset;
     private Coroutine _shakeCoroutine;
@@ -66,12 +78,30 @@ public class SmoothFlightCamera : MonoBehaviour
     {
         if (target == null) return;
 
+        UpdateViewDistance();
+
         float posT = 1f - Mathf.Exp(-positionDamping * Time.deltaTime);
         float rotT = 1f - Mathf.Exp(-rotationDamping * Time.deltaTime);
 
         _smoothedPosition = Vector3.Lerp(_smoothedPosition, DesiredPosition(), posT);
         transform.position = _smoothedPosition + _shakeOffset;
         transform.rotation = Quaternion.Slerp(transform.rotation, DesiredRotation(), rotT);
+    }
+
+    // Far clip = distance to the horizon for the camera's height above the ground,
+    // d = sqrt(2 * R_earth * h), so what's visible scales the way it would from a real cockpit.
+    // The near plane moves out with it (far/near stays ~1e5) to keep depth precision.
+    private void UpdateViewDistance()
+    {
+        if (!altitudeFarClip) return;
+        if (_camera == null) _camera = GetComponent<Camera>();
+        if (_camera == null) return;
+
+        const float earthRadius = 6371000f;
+        float height = Mathf.Max(0f, transform.position.y);
+        float far = Mathf.Clamp(minFarClip + Mathf.Sqrt(2f * earthRadius * height), minFarClip, maxFarClip);
+        _camera.farClipPlane = far;
+        _camera.nearClipPlane = Mathf.Clamp(far * 1e-5f, 0.3f, 4f);
     }
 
     // Heading + pitch with roll stripped out (minimal rotation to the aircraft's forward, no
