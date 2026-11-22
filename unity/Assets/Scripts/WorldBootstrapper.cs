@@ -1,13 +1,9 @@
 using UnityEngine;
 
-// Procedurally builds a minimal open-world flight-sim scene at runtime: a low-poly landscape,
-// an active runway, a placeholder airplane wired up with AerodynamicFlightController and
-// CrashEffects, an input manager running GestureFlightInput (the glove's on-device gesture
-// classifier is the only flight input), a SmoothFlightCamera chasing the plane, and a speed HUD.
-//
-// Usage: drop this on a single empty GameObject in an empty scene and press Play. No manual
-// scene setup required. Swap the placeholder primitive airplane for a real model later by
-// replacing BuildAirplane()'s visuals - the Rigidbody/AerodynamicFlightController wiring stays.
+// Builds the flight-sim scene at runtime: a low-poly landscape, a runway, the G650ER wired up
+// with AerodynamicFlightController and CrashEffects, an input manager running GestureFlightInput
+// (the glove's on-device gesture classifier), a SmoothFlightCamera chasing the plane, and a
+// speed HUD.
 [DefaultExecutionOrder(-100)]
 public class WorldBootstrapper : MonoBehaviour
 {
@@ -252,7 +248,7 @@ public class WorldBootstrapper : MonoBehaviour
             frictionCombine = PhysicsMaterialCombine.Minimum
         };
 
-        // mass and inertia are set by AerodynamicFlightController from its active preset
+        // mass and inertia are set by AerodynamicFlightController from its AircraftModel
         var rb = planeRoot.AddComponent<Rigidbody>();
 
         // added before AerodynamicFlightController so its GetComponent<EngineStartup>() in Awake() finds it
